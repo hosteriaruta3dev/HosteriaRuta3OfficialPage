@@ -7,6 +7,8 @@ import Ubicacion from "@/components/Ubicacion";
 import { getActiveRooms } from "@/lib/data";
 import { SITE } from "@/lib/constants";
 
+export const dynamic = "force-dynamic";
+
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "LodgingBusiness",
