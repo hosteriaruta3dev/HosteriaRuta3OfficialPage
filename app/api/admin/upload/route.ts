@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
-import { promises as fs } from "fs";
-import path from "path";
 import sharp from "sharp";
 import { COOKIE_NAME, verifyToken } from "@/lib/session";
-import { getSupabase, isSupabaseConfigured, STORAGE_BUCKET } from "@/lib/supabase";
+import { getSupabaseAdmin, STORAGE_BUCKET } from "@/lib/supabase";
 
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
 const OUTPUT_TYPE = "image/webp";
@@ -20,8 +18,6 @@ async function optimizeImage(buffer: Buffer): Promise<Buffer> {
   }
   return image.webp({ quality: 80 }).toBuffer();
 }
-
-const SAFE_DIR_PREFIX = path.join(process.cwd(), "public", "uploads") + path.sep;
 
 export async function POST(request: Request) {
   const token = request.headers.get("cookie")?.match(new RegExp(`${COOKIE_NAME}=([^;]+)`))?.[1]
@@ -70,40 +66,33 @@ export async function POST(request: Request) {
 
   const filename = `${Date.now()}-${randomUUID().slice(0, 8)}.${OUTPUT_EXT}`;
 
-  if (isSupabaseConfigured()) {
-    const { error: bucketError } = await getSupabase().storage.createBucket(
-      STORAGE_BUCKET,
-      { public: true },
-    );
-    if (bucketError) {
-      const message = (bucketError as { message?: string }).message ?? "";
-      if (!/already exists/i.test(message)) {
-        return NextResponse.json(
-          { error: "No se pudo acceder al contenedor de imágenes." },
-          { status: 500 },
-        );
-      }
-    }
-
-    const { error, data } = await getSupabase().storage
-      .from(STORAGE_BUCKET)
-      .upload(filename, buffer, { contentType: OUTPUT_TYPE, upsert: false });
-    if (error) {
+  const { error: bucketError } = await getSupabaseAdmin().storage.createBucket(
+    STORAGE_BUCKET,
+    { public: true },
+  );
+  if (bucketError) {
+    const message = (bucketError as { message?: string }).message ?? "";
+    if (!/already exists/i.test(message)) {
       return NextResponse.json(
-        { error: "No se pudo subir la imagen al almacenamiento." },
+        { error: "No se pudo acceder al contenedor de imágenes." },
         { status: 500 },
       );
     }
-
-    const { data: publicUrl } = getSupabase().storage
-      .from(STORAGE_BUCKET)
-      .getPublicUrl(data.path);
-    return NextResponse.json({ url: publicUrl.publicUrl });
   }
 
-  const filePath = path.join(SAFE_DIR_PREFIX, filename);
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, buffer);
+  const { error, data } = await getSupabaseAdmin().storage
+    .from(STORAGE_BUCKET)
+    .upload(filename, buffer, { contentType: OUTPUT_TYPE, upsert: false });
+  if (error) {
+    return NextResponse.json(
+      { error: "No se pudo subir la imagen al almacenamiento." },
+      { status: 500 },
+    );
+  }
 
-  return NextResponse.json({ url: `/uploads/${filename}` });
+  const { data: publicUrl } = getSupabaseAdmin().storage
+    .from(STORAGE_BUCKET)
+    .getPublicUrl(data.path);
+
+  return NextResponse.json({ url: publicUrl.publicUrl });
 }

@@ -1,8 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { promises as fs } from "fs";
-import path from "path";
 import {
   getRoom,
   replaceRoom,
@@ -12,11 +10,7 @@ import {
 } from "@/lib/data";
 import { getSession } from "@/lib/session";
 import { isBeforeToday } from "@/lib/date";
-import {
-  getSupabase,
-  isSupabaseConfigured,
-  STORAGE_BUCKET,
-} from "@/lib/supabase";
+import { getSupabaseAdmin, STORAGE_BUCKET } from "@/lib/supabase";
 
 async function requireAdmin(): Promise<void> {
   const session = await getSession();
@@ -178,21 +172,12 @@ function storageObjectPath(url: string): string | null {
 }
 
 async function deleteStoredImage(url: string): Promise<void> {
-  if (isSupabaseConfigured()) {
-    const objectPath = storageObjectPath(url);
-    if (!objectPath) return;
-    await getSupabase()
-      .storage
-      .from(STORAGE_BUCKET)
-      .remove([objectPath])
-      .catch(() => {});
-  } else if (url.startsWith("/uploads/")) {
-    const safePrefix = path.join(process.cwd(), "public") + path.sep;
-    const localPath = path.join(process.cwd(), "public", url.replace(/^\//, ""));
-    if (localPath.startsWith(safePrefix)) {
-      await fs.unlink(localPath).catch(() => {});
-    }
-  }
+  const objectPath = storageObjectPath(url);
+  if (!objectPath) return;
+  await getSupabaseAdmin()
+    .storage.from(STORAGE_BUCKET)
+    .remove([objectPath])
+    .catch(() => {});
 }
 
 export async function deleteImageAction(
@@ -209,25 +194,13 @@ export async function deleteImageAction(
   const remaining = room.images.filter((image) => image !== imageUrl);
   await replaceRoom({ ...room, images: remaining });
 
-  if (isSupabaseConfigured()) {
-    const objectPath = storageObjectPath(imageUrl);
-    if (objectPath) {
-      const { error } = await getSupabase().storage
-        .from(STORAGE_BUCKET)
-        .remove([objectPath]);
-      if (error) {
-        return { ok: false, error: "No se pudo borrar la imagen del almacenamiento." };
-      }
-    }
-  } else if (imageUrl.startsWith("/uploads/")) {
-    const safePrefix = path.join(process.cwd(), "public") + path.sep;
-    const localPath = path.join(process.cwd(), "public", imageUrl.replace(/^\//, ""));
-    if (localPath.startsWith(safePrefix)) {
-      try {
-        await fs.unlink(localPath);
-      } catch {
-        // El archivo pudo no existir (ej. guardado externamente). No es bloqueante.
-      }
+  const objectPath = storageObjectPath(imageUrl);
+  if (objectPath) {
+    const { error } = await getSupabaseAdmin().storage
+      .from(STORAGE_BUCKET)
+      .remove([objectPath]);
+    if (error) {
+      return { ok: false, error: "No se pudo borrar la imagen del almacenamiento." };
     }
   }
 

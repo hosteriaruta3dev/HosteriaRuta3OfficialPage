@@ -66,3 +66,15 @@ insert into public.rooms (id, type, name, description, price, capacity, amenitie
     true
   )
 on conflict (id) do nothing;
+
+-- Seguridad: RLS con lectura pública (rol anon) y escritura exclusiva de service_role.
+alter table public.rooms enable row level security;
+alter table public.occupancies enable row level security;
+
+drop policy if exists "rooms_public_read" on public.rooms;
+create policy "rooms_public_read" on public.rooms
+  for select to anon, authenticated using (true);
+
+drop policy if exists "occupancies_public_read" on public.occupancies;
+create policy "occupancies_public_read" on public.occupancies
+  for select to anon, authenticated using (true);
